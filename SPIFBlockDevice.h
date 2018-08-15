@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef MBED_SPIF_BLOCK_DEVICE_H
-#define MBED_SPIF_BLOCK_DEVICE_H
+#ifndef ESP_SPIF_BLOCK_DEVICE_H
+#define ESP_SPIF_BLOCK_DEVICE_H
 
-#include <mbed.h>
+#include <SPI.h>
 #include "BlockDevice.h"
 
 /** BlockDevice for SPI based flash devices
@@ -65,7 +65,8 @@ class SPIFBlockDevice : public BlockDevice {
      *  @param csel     SPI chip select pin
      *  @param freq     Clock speed of the SPI bus (defaults to 40MHz)
      */
-    SPIFBlockDevice(PinName mosi, PinName miso, PinName sclk, PinName csel, int freq = 40000000);
+    SPIFBlockDevice(uint8_t spi_bus, uint8_t mosi, uint8_t miso, uint8_t sclk, uint8_t csel,
+                    uint32_t freq = 40000000);
 
     /** Initialize a block device
      *
@@ -156,8 +157,9 @@ class SPIFBlockDevice : public BlockDevice {
 
    private:
     // Master side hardware
-    SPI _spi;
-    DigitalOut _cs;
+    SPIClass _spi;
+    uint8_t _cs;
+    uint32_t _freq;
 
     // Device configuration discovered through sfdp
     bd_size_t _size;
@@ -172,4 +174,4 @@ class SPIFBlockDevice : public BlockDevice {
     void _cmdwrite(uint8_t op, uint32_t addrc, uint32_t argc, uint32_t addr, const uint8_t *args);
 };
 
-#endif /* MBED_SPIF_BLOCK_DEVICE_H */
+#endif /* ESP_SPIF_BLOCK_DEVICE_H */

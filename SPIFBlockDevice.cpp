@@ -15,7 +15,8 @@
  */
 
 #include "SPIFBlockDevice.h"
-#include "mbed_critical.h"
+#include <Arduino.h>
+#include "string.h"
 
 // Read/write/erase sizes
 #define SPIF_READ_SIZE 1
@@ -46,23 +47,22 @@ enum ops {
 #define SPIF_WEL 0x2
 #define SPIF_WIP 0x1
 
-SPIFBlockDevice::SPIFBlockDevice(PinName mosi, PinName miso, PinName sclk, PinName cs, int freq)
-    : _spi(mosi, miso, sclk), _cs(cs), _size(0), _is_initialized(false), _init_ref_count(0) {
-    _cs = 1;
-    _spi.frequency(freq);
+SPIFBlockDevice::SPIFBlockDevice(uint8_t spi_bus, uint8_t mosi, uint8_t miso, uint8_t sclk,
+                                 uint8_t cs, uint32_t freq)
+    : _spi(spi_bus), _cs(cs), _freq(freq), _size(0), _is_initialized(false), _init_ref_count(0) {
+    // Initialize CS
+    pinMode(_cs, OUTPUT);
+    digitalWrite(_cs, HIGH);
+
+    // Initialize SPI
+    _spi.begin(sclk, miso, mosi, cs);
+    _spi.setFrequency(freq);
 }
 
 int SPIFBlockDevice::init() {
     if (!_is_initialized) {
         _init_ref_count = 0;
     }
-
-    uint32_t val = core_util_atomic_incr_u32(&_init_ref_count, 1);
-
-    if (val != 1) {
-        return BD_ERROR_OK;
-    }
-
     // Check for vendor specific hacks, these should move into more general
     // handling when possible. RDID is not used to verify a device is attached.
     uint8_t id[3];
@@ -134,12 +134,6 @@ int SPIFBlockDevice::deinit() {
         return 0;
     }
 
-    uint32_t val = core_util_atomic_decr_u32(&_init_ref_count, 1);
-
-    if (val) {
-        return 0;
-    }
-
     // Latch write disable just to keep noise
     // from changing the device
     _cmdwrite(SPIF_WRDI, 0, 0, 0x0, NULL);
@@ -150,23 +144,26 @@ int SPIFBlockDevice::deinit() {
 
 void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32_t addr,
                                uint8_t *rets) {
-    _cs = 0;
-    _spi.write(op);
+    _spi.beginTransaction(SPISettings(_freq, MSBFIRST, SPI_MODE0));
+    digitalWrite(_cs, LOW);
+    _spi.transfer(op);
 
     for (uint32_t i = 0; i < addrc; i++) {
-        _spi.write(0xff & (addr >> (8 * (addrc - 1 - i))));
+        _spi.transfer((uint8_t)(0xff & (addr >> (8 * (addrc - 1 - i)))));
     }
 
     for (uint32_t i = 0; i < retc; i++) {
-        rets[i] = _spi.write(0);
+        rets[i] = _spi.transfer((uint8_t)0);
     }
-    _cs = 1;
+
+    digitalWrite(_cs, HIGH);
+    _spi.endTransaction();
 
     if (SPIF_DEBUG) {
         printf("spif <- %02x", op);
         for (uint32_t i = 0; i < addrc; i++) {
             if (i < addrc) {
-                printf("%02lx", 0xff & (addr >> (8 * (addrc - 1 - i))));
+                printf("%02x", (uint8_t)(0xff & (addr >> (8 * (addrc - 1 - i)))));
             } else {
                 printf("  ");
             }
@@ -184,23 +181,26 @@ void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32
 
 void SPIFBlockDevice::_cmdwrite(uint8_t op, uint32_t addrc, uint32_t argc, uint32_t addr,
                                 const uint8_t *args) {
+    _spi.beginTransaction(SPISettings(_freq, MSBFIRST, SPI_MODE0));
+    digitalWrite(_cs, LOW);
     _cs = 0;
-    _spi.write(op);
+    _spi.transfer(op);
 
     for (uint32_t i = 0; i < addrc; i++) {
-        _spi.write(0xff & (addr >> (8 * (addrc - 1 - i))));
+        _spi.transfer((uint8_t)(0xff & (addr >> (8 * (addrc - 1 - i)))));
     }
 
     for (uint32_t i = 0; i < argc; i++) {
-        _spi.write(args[i]);
+        _spi.transfer(args[i]);
     }
-    _cs = 1;
+    digitalWrite(_cs, HIGH);
+    _spi.endTransaction();
 
     if (SPIF_DEBUG) {
         printf("spif -> %02x", op);
         for (uint32_t i = 0; i < addrc; i++) {
             if (i < addrc) {
-                printf("%02lx", 0xff & (addr >> (8 * (addrc - 1 - i))));
+                printf("%02x", (uint8_t)(0xff & (addr >> (8 * (addrc - 1 - i)))));
             } else {
                 printf("  ");
             }
@@ -227,7 +227,7 @@ int SPIFBlockDevice::_sync() {
             return 0;
         }
 
-        wait_ms(1);
+        delayMicroseconds(1000);
     }
 
     return BD_ERROR_DEVICE_ERROR;
@@ -246,7 +246,7 @@ int SPIFBlockDevice::_wren() {
             return 0;
         }
 
-        wait_ms(1);
+        delayMicroseconds(1000);
     }
 
     return BD_ERROR_DEVICE_ERROR;
@@ -258,7 +258,7 @@ int SPIFBlockDevice::read(void *buffer, bd_addr_t addr, bd_size_t size) {
     }
 
     // Check the address and size fit onto the chip.
-    MBED_ASSERT(is_valid_read(addr, size));
+    assert(is_valid_read(addr, size));
 
     _cmdread(SPIF_READ, 3, size, addr, static_cast<uint8_t *>(buffer));
     return 0;
@@ -266,7 +266,7 @@ int SPIFBlockDevice::read(void *buffer, bd_addr_t addr, bd_size_t size) {
 
 int SPIFBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size) {
     // Check the address and size fit onto the chip.
-    MBED_ASSERT(is_valid_program(addr, size));
+    assert(is_valid_program(addr, size));
 
     if (!_is_initialized) {
         return BD_ERROR_DEVICE_ERROR;
@@ -287,7 +287,7 @@ int SPIFBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size)
         addr += chunk;
         size -= chunk;
 
-        wait_ms(1);
+        delayMicroseconds(1000);
 
         err = _sync();
         if (err) {
@@ -300,7 +300,7 @@ int SPIFBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size)
 
 int SPIFBlockDevice::erase(bd_addr_t addr, bd_size_t size) {
     // Check the address and size fit onto the chip.
-    MBED_ASSERT(is_valid_erase(addr, size));
+    assert(is_valid_erase(addr, size));
 
     if (!_is_initialized) {
         return BD_ERROR_DEVICE_ERROR;

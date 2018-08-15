@@ -18,26 +18,26 @@
 #include "mbed_critical.h"
 
 // Read/write/erase sizes
-#define SPIF_READ_SIZE  1
-#define SPIF_PROG_SIZE  1
-#define SPIF_SE_SIZE    4096
-#define SPIF_TIMEOUT    10000
+#define SPIF_READ_SIZE 1
+#define SPIF_PROG_SIZE 1
+#define SPIF_SE_SIZE 4096
+#define SPIF_TIMEOUT 10000
 
 // Debug available
-#define SPIF_DEBUG      0
+#define SPIF_DEBUG 0
 
-// MX25R Series Register Command Table. 
+// MX25R Series Register Command Table.
 enum ops {
-    SPIF_NOP  = 0x00, // No operation
-    SPIF_READ = 0x03, // Read data
-    SPIF_PROG = 0x02, // Program data
-    SPIF_SE   = 0x20, // 4KB Sector Erase 
-    SPIF_CE   = 0xc7, // Chip Erase 
-    SPIF_SFDP = 0x5a, // Read SFDP 
-    SPIF_WREN = 0x06, // Write Enable 
-    SPIF_WRDI = 0x04, // Write Disable
-    SPIF_RDSR = 0x05, // Read Status Register 
-    SPIF_RDID = 0x9f, // Read Manufacturer and JDEC Device ID 
+    SPIF_NOP = 0x00,   // No operation
+    SPIF_READ = 0x03,  // Read data
+    SPIF_PROG = 0x02,  // Program data
+    SPIF_SE = 0x20,    // 4KB Sector Erase
+    SPIF_CE = 0xc7,    // Chip Erase
+    SPIF_SFDP = 0x5a,  // Read SFDP
+    SPIF_WREN = 0x06,  // Write Enable
+    SPIF_WRDI = 0x04,  // Write Disable
+    SPIF_RDSR = 0x05,  // Read Status Register
+    SPIF_RDID = 0x9f,  // Read Manufacturer and JDEC Device ID
 };
 
 // Status register from RDSR
@@ -46,17 +46,13 @@ enum ops {
 #define SPIF_WEL 0x2
 #define SPIF_WIP 0x1
 
- 
-SPIFBlockDevice::SPIFBlockDevice(
-    PinName mosi, PinName miso, PinName sclk, PinName cs, int freq)
-    : _spi(mosi, miso, sclk), _cs(cs), _size(0), _is_initialized(false), _init_ref_count(0)
-{
+SPIFBlockDevice::SPIFBlockDevice(PinName mosi, PinName miso, PinName sclk, PinName cs, int freq)
+    : _spi(mosi, miso, sclk), _cs(cs), _size(0), _is_initialized(false), _init_ref_count(0) {
     _cs = 1;
     _spi.frequency(freq);
 }
 
-int SPIFBlockDevice::init()
-{
+int SPIFBlockDevice::init() {
     if (!_is_initialized) {
         _init_ref_count = 0;
     }
@@ -81,7 +77,7 @@ int SPIFBlockDevice::init()
             break;
     }
 
-    // Check that device is doing ok 
+    // Check that device is doing ok
     int err = _sync();
     if (err) {
         return BD_ERROR_DEVICE_ERROR;
@@ -106,10 +102,7 @@ int SPIFBlockDevice::init()
 
     // Parameter table pointer, spi commands are BE, SFDP is LE,
     // also sfdp command expects extra read wait byte
-    uint32_t table_addr = (
-        (header[14] << 24) |
-        (header[13] << 16) |
-        (header[12] << 8 ));
+    uint32_t table_addr = ((header[14] << 24) | (header[13] << 16) | (header[12] << 8));
     uint8_t table[8];
     _cmdread(SPIF_SFDP, 4, 8, table_addr, table);
 
@@ -128,19 +121,14 @@ int SPIFBlockDevice::init()
     }
 
     // Get device density, stored as size in bits - 1
-    uint32_t density = (
-        (table[7] << 24) |
-        (table[6] << 16) |
-        (table[5] << 8 ) |
-        (table[4] << 0 ));
-    _size = (density/8) + 1;
+    uint32_t density = ((table[7] << 24) | (table[6] << 16) | (table[5] << 8) | (table[4] << 0));
+    _size = (density / 8) + 1;
 
     _is_initialized = true;
     return 0;
 }
 
-int SPIFBlockDevice::deinit()
-{
+int SPIFBlockDevice::deinit() {
     if (!_is_initialized) {
         _init_ref_count = 0;
         return 0;
@@ -160,10 +148,8 @@ int SPIFBlockDevice::deinit()
     return 0;
 }
 
-void SPIFBlockDevice::_cmdread(
-        uint8_t op, uint32_t addrc, uint32_t retc,
-        uint32_t addr, uint8_t *rets)
-{
+void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32_t addr,
+                               uint8_t *rets) {
     _cs = 0;
     _spi.write(op);
 
@@ -196,10 +182,8 @@ void SPIFBlockDevice::_cmdread(
     }
 }
 
-void SPIFBlockDevice::_cmdwrite(
-        uint8_t op, uint32_t addrc, uint32_t argc,
-        uint32_t addr, const uint8_t *args)
-{
+void SPIFBlockDevice::_cmdwrite(uint8_t op, uint32_t addrc, uint32_t argc, uint32_t addr,
+                                const uint8_t *args) {
     _cs = 0;
     _spi.write(op);
 
@@ -232,8 +216,7 @@ void SPIFBlockDevice::_cmdwrite(
     }
 }
 
-int SPIFBlockDevice::_sync()
-{
+int SPIFBlockDevice::_sync() {
     for (int i = 0; i < SPIF_TIMEOUT; i++) {
         // Read status register until write not-in-progress
         uint8_t status;
@@ -250,8 +233,7 @@ int SPIFBlockDevice::_sync()
     return BD_ERROR_DEVICE_ERROR;
 }
 
-int SPIFBlockDevice::_wren()
-{
+int SPIFBlockDevice::_wren() {
     _cmdwrite(SPIF_WREN, 0, 0, 0x0, NULL);
 
     for (int i = 0; i < SPIF_TIMEOUT; i++) {
@@ -270,8 +252,7 @@ int SPIFBlockDevice::_wren()
     return BD_ERROR_DEVICE_ERROR;
 }
 
-int SPIFBlockDevice::read(void *buffer, bd_addr_t addr, bd_size_t size)
-{
+int SPIFBlockDevice::read(void *buffer, bd_addr_t addr, bd_size_t size) {
     if (!_is_initialized) {
         return BD_ERROR_DEVICE_ERROR;
     }
@@ -282,9 +263,8 @@ int SPIFBlockDevice::read(void *buffer, bd_addr_t addr, bd_size_t size)
     _cmdread(SPIF_READ, 3, size, addr, static_cast<uint8_t *>(buffer));
     return 0;
 }
- 
-int SPIFBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size)
-{
+
+int SPIFBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size) {
     // Check the address and size fit onto the chip.
     MBED_ASSERT(is_valid_program(addr, size));
 
@@ -301,9 +281,9 @@ int SPIFBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size)
         // Write up to 256 bytes a page
         // TODO handle unaligned programs
         uint32_t off = addr % 256;
-        uint32_t chunk = (off + size < 256) ? size : (256-off);
+        uint32_t chunk = (off + size < 256) ? size : (256 - off);
         _cmdwrite(SPIF_PROG, 3, chunk, addr, static_cast<const uint8_t *>(buffer));
-        buffer = static_cast<const uint8_t*>(buffer) + chunk;
+        buffer = static_cast<const uint8_t *>(buffer) + chunk;
         addr += chunk;
         size -= chunk;
 
@@ -318,8 +298,7 @@ int SPIFBlockDevice::program(const void *buffer, bd_addr_t addr, bd_size_t size)
     return 0;
 }
 
-int SPIFBlockDevice::erase(bd_addr_t addr, bd_size_t size)
-{
+int SPIFBlockDevice::erase(bd_addr_t addr, bd_size_t size) {
     // Check the address and size fit onto the chip.
     MBED_ASSERT(is_valid_erase(addr, size));
 
@@ -332,7 +311,7 @@ int SPIFBlockDevice::erase(bd_addr_t addr, bd_size_t size)
         if (err) {
             return err;
         }
-    
+
         // Erase 4kbyte sectors
         // TODO support other erase sizes?
         uint32_t chunk = 4096;
@@ -349,28 +328,23 @@ int SPIFBlockDevice::erase(bd_addr_t addr, bd_size_t size)
     return 0;
 }
 
-bd_size_t SPIFBlockDevice::get_read_size() const
-{
+bd_size_t SPIFBlockDevice::get_read_size() const {
     return SPIF_READ_SIZE;
 }
 
-bd_size_t SPIFBlockDevice::get_program_size() const
-{
+bd_size_t SPIFBlockDevice::get_program_size() const {
     return SPIF_PROG_SIZE;
 }
 
-bd_size_t SPIFBlockDevice::get_erase_size() const
-{
+bd_size_t SPIFBlockDevice::get_erase_size() const {
     return SPIF_SE_SIZE;
 }
 
-bd_size_t SPIFBlockDevice::get_erase_size(bd_addr_t addr) const
-{
+bd_size_t SPIFBlockDevice::get_erase_size(bd_addr_t addr) const {
     return SPIF_SE_SIZE;
 }
 
-bd_size_t SPIFBlockDevice::size() const
-{
+bd_size_t SPIFBlockDevice::size() const {
     if (!_is_initialized) {
         return BD_ERROR_DEVICE_ERROR;
     }
@@ -378,7 +352,6 @@ bd_size_t SPIFBlockDevice::size() const
     return _size;
 }
 
-int SPIFBlockDevice::get_erase_value() const
-{
+int SPIFBlockDevice::get_erase_value() const {
     return 0xFF;
 }

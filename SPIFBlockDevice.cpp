@@ -15,7 +15,7 @@
  */
 
 #include "SPIFBlockDevice.h"
-#include <Arduino.h>
+#include <esp32-hal-gpio.h>
 #include "string.h"
 
 // Read/write/erase sizes

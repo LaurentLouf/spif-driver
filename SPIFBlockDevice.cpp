@@ -144,7 +144,7 @@ int SPIFBlockDevice::deinit() {
 
 void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32_t addr,
                                uint8_t *rets) {
-    _spi.beginTransaction(SPISettings(_freq, MSBFIRST, SPI_MODE0));
+    _spi.beginTransaction(SPISettings(_freq, SPI_MSBFIRST, SPI_MODE0));
     digitalWrite(_cs, LOW);
     _spi.transfer(op);
 
@@ -181,7 +181,7 @@ void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32
 
 void SPIFBlockDevice::_cmdwrite(uint8_t op, uint32_t addrc, uint32_t argc, uint32_t addr,
                                 const uint8_t *args) {
-    _spi.beginTransaction(SPISettings(_freq, MSBFIRST, SPI_MODE0));
+    _spi.beginTransaction(SPISettings(_freq, SPI_MSBFIRST, SPI_MODE0));
     digitalWrite(_cs, LOW);
     _cs = 0;
     _spi.transfer(op);

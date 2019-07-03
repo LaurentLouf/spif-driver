@@ -190,7 +190,6 @@ void SPIFBlockDevice::_cmdwrite(uint8_t op, uint32_t addrc, uint32_t argc, uint3
     _spi.beginTransaction(SPISettings(_freq, SPI_MSBFIRST, SPI_MODE0));
     digitalWrite(_cs, LOW);
 
-    _cs = 0;
     _spi.transfer(op);
 
     for (uint32_t i = 0; i < addrc; i++) {

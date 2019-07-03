@@ -20,8 +20,8 @@
 
 // Read/write/erase sizes
 #define SPIF_READ_SIZE 1
-#define SPIF_PROG_SIZE 1
-#define SPIF_SE_SIZE 4096
+#define SPIF_PROGRAM_SIZE 1
+#define SPIF_SECTOR_ERASE_SIZE 4096
 #define SPIF_TIMEOUT 10000
 
 // Debug available
@@ -29,23 +29,25 @@
 
 // MX25R Series Register Command Table.
 enum ops {
-    SPIF_NOP = 0x00,   // No operation
-    SPIF_READ = 0x03,  // Read data
-    SPIF_PROG = 0x02,  // Program data
-    SPIF_SE = 0x20,    // 4KB Sector Erase
-    SPIF_CE = 0xc7,    // Chip Erase
-    SPIF_SFDP = 0x5a,  // Read SFDP
-    SPIF_WREN = 0x06,  // Write Enable
-    SPIF_WRDI = 0x04,  // Write Disable
-    SPIF_RDSR = 0x05,  // Read Status Register
-    SPIF_RDID = 0x9f,  // Read Manufacturer and JDEC Device ID
+    SPIF_NOP = 0x00,                     // No operation
+    SPIF_READ = 0x03,                    // Read data
+    SPIF_PROG = 0x02,                    // Program data
+    SPIF_SECTOR_ERASE = 0x20,            // 4KB Sector Erase
+    SPIF_CHIP_ERASE = 0xc7,              // Chip Erase
+    SPIF_SFDP = 0x5a,                    // Read SFDP
+    SPIF_WRITE_ENABLE = 0x06,            // Write Enable
+    SPIF_WRDI = 0x04,                    // Write Disable
+    SPIF_READ_STATUS_REGISTER_1 = 0x05,  // Read Status Register 1
+    SPIF_READ_STATUS_REGISTER_2 = 0x35,  // Read Status Register 2
+    SPIF_READ_STATUS_REGISTER_3 = 0x15,  // Read Status Register 2
+    SPIF_RDID = 0x9f,                    // Read Manufacturer and JDEC Device ID
 };
 
-// Status register from RDSR
+// Status register from read status register #1
 // [- stuff -| wel | wip ]
 // [-   6   -|  1  |  1  ]
-#define SPIF_WEL 0x2
-#define SPIF_WIP 0x1
+#define SPIF_WRITE_ENABLE_LATCH 0x2
+#define SPIF_WRITE_IN_PROGRESS 0x1
 
 SPIFBlockDevice::SPIFBlockDevice(uint8_t spi_bus, uint8_t mosi, uint8_t miso, uint8_t sclk,
                                  uint8_t cs, uint32_t freq)
@@ -109,7 +111,7 @@ int SPIFBlockDevice::init() {
     // Check erase size, currently only supports 4kbytes
     // TODO support erase size != 4kbytes?
     // TODO support other erase opcodes from the sector descriptions
-    if ((table[0] & 0x3) != 0x1 || table[1] != SPIF_SE) {
+    if ((table[0] & 0x3) != 0x1 || table[1] != SPIF_SECTOR_ERASE) {
         return BD_ERROR_DEVICE_ERROR;
     }
 
@@ -144,8 +146,10 @@ int SPIFBlockDevice::deinit() {
 
 void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32_t addr,
                                uint8_t *rets) {
+    // Begin transaction then set chip select to zero in that order
     _spi.beginTransaction(SPISettings(_freq, SPI_MSBFIRST, SPI_MODE0));
     digitalWrite(_cs, LOW);
+
     _spi.transfer(op);
 
     for (uint32_t i = 0; i < addrc; i++) {
@@ -156,6 +160,7 @@ void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32
         rets[i] = _spi.transfer((uint8_t)0);
     }
 
+    // Set chip select to one then end the transaction, in that order
     digitalWrite(_cs, HIGH);
     _spi.endTransaction();
 
@@ -181,8 +186,10 @@ void SPIFBlockDevice::_cmdread(uint8_t op, uint32_t addrc, uint32_t retc, uint32
 
 void SPIFBlockDevice::_cmdwrite(uint8_t op, uint32_t addrc, uint32_t argc, uint32_t addr,
                                 const uint8_t *args) {
+    // Begin transaction then set chip select to zero, in that order
     _spi.beginTransaction(SPISettings(_freq, SPI_MSBFIRST, SPI_MODE0));
     digitalWrite(_cs, LOW);
+
     _cs = 0;
     _spi.transfer(op);
 
@@ -193,6 +200,8 @@ void SPIFBlockDevice::_cmdwrite(uint8_t op, uint32_t addrc, uint32_t argc, uint3
     for (uint32_t i = 0; i < argc; i++) {
         _spi.transfer(args[i]);
     }
+
+    // Set chip select to one then end the transaction, in that order
     digitalWrite(_cs, HIGH);
     _spi.endTransaction();
 
@@ -220,10 +229,10 @@ int SPIFBlockDevice::_sync() {
     for (int i = 0; i < SPIF_TIMEOUT; i++) {
         // Read status register until write not-in-progress
         uint8_t status;
-        _cmdread(SPIF_RDSR, 0, 1, 0x0, &status);
+        _cmdread(SPIF_READ_STATUS_REGISTER_1, 0, 1, 0x0, &status);
 
         // Check WIP bit
-        if (!(status & SPIF_WIP)) {
+        if (!(status & SPIF_WRITE_IN_PROGRESS)) {
             return 0;
         }
 
@@ -234,15 +243,15 @@ int SPIFBlockDevice::_sync() {
 }
 
 int SPIFBlockDevice::_wren() {
-    _cmdwrite(SPIF_WREN, 0, 0, 0x0, NULL);
+    _cmdwrite(SPIF_WRITE_ENABLE, 0, 0, 0x0, NULL);
 
     for (int i = 0; i < SPIF_TIMEOUT; i++) {
         // Read status register until write latch is enabled
         uint8_t status;
-        _cmdread(SPIF_RDSR, 0, 1, 0x0, &status);
+        _cmdread(SPIF_READ_STATUS_REGISTER_1, 0, 1, 0x0, &status);
 
-        // Check WEL bit
-        if (status & SPIF_WEL) {
+        // Check Write Enable Latch bit
+        if (status & SPIF_WRITE_ENABLE_LATCH) {
             return 0;
         }
 
@@ -315,7 +324,7 @@ int SPIFBlockDevice::erase(bd_addr_t addr, bd_size_t size) {
         // Erase 4kbyte sectors
         // TODO support other erase sizes?
         uint32_t chunk = 4096;
-        _cmdwrite(SPIF_SE, 3, 0, addr, NULL);
+        _cmdwrite(SPIF_SECTOR_ERASE, 3, 0, addr, NULL);
         addr += chunk;
         size -= chunk;
 
@@ -333,15 +342,15 @@ bd_size_t SPIFBlockDevice::get_read_size() const {
 }
 
 bd_size_t SPIFBlockDevice::get_program_size() const {
-    return SPIF_PROG_SIZE;
+    return SPIF_PROGRAM_SIZE;
 }
 
 bd_size_t SPIFBlockDevice::get_erase_size() const {
-    return SPIF_SE_SIZE;
+    return SPIF_SECTOR_ERASE_SIZE;
 }
 
 bd_size_t SPIFBlockDevice::get_erase_size(bd_addr_t addr) const {
-    return SPIF_SE_SIZE;
+    return SPIF_SECTOR_ERASE_SIZE;
 }
 
 bd_size_t SPIFBlockDevice::size() const {

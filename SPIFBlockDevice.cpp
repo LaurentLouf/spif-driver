@@ -61,6 +61,16 @@ SPIFBlockDevice::SPIFBlockDevice(uint8_t spi_bus, uint8_t mosi, uint8_t miso, ui
     _spi.setFrequency(freq);
 }
 
+SPIFBlockDevice::~SPIFBlockDevice(void) {
+    // Deinit the flash
+    if (_is_initialized == true) {
+        deinit();
+    }
+
+    // Deinitialize SPI
+    _spi.end();
+}
+
 int SPIFBlockDevice::init() {
     if (!_is_initialized) {
         _init_ref_count = 0;

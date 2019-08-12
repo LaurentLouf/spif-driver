@@ -68,6 +68,11 @@ class SPIFBlockDevice : public BlockDevice {
     SPIFBlockDevice(uint8_t spi_bus, uint8_t mosi, uint8_t miso, uint8_t sclk, uint8_t csel,
                     uint32_t freq = 40000000);
 
+    /** Deletes a SPIFBlockDevice
+     *
+     */
+    ~SPIFBlockDevice(void);
+
     /** Initialize a block device
      *
      *  @return         0 on success or a negative error code on failure
